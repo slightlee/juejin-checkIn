@@ -36,4 +36,5 @@ jobs:
           exit 1
         fi
       env:
-        QYWX_ROBOT: ${{ secrets.QYWX_ROBOT }}
+        # QYWX_ROBOT: ${{ secrets.QYWX_ROBOT }}
+        PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
