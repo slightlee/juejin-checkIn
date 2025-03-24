@@ -14,44 +14,67 @@ let errMsg = "";
 let checkin = "";
 let point = "-1";
 
-const QYWX_ROBOT = process.env.QYWX_ROBOT;
+// const QYWX_ROBOT = process.env.QYWX_ROBOT;
+const PUSHPLUS_TOKEN = process.env.PUSHPLUS_TOKEN;
+const SUCCESS_CODE = 200
 
 if (!fs.existsSync(DIR_PATH)) {
     fs.mkdirSync(DIR_PATH);
 }
 
-if (!QYWX_ROBOT) {
-    console.log("未配置 企业微信群机器人webhook地址, 跳过推送");
+// if (!QYWX_ROBOT) {
+//     console.log("未配置 企业微信群机器人webhook地址, 跳过推送");
+// }
+
+if (!PUSHPLUS_TOKEN) {
+    console.log("未配置 pushplus token, 跳过推送");
 }
 
 const pushMsg = async (msg) => {
-    if (QYWX_ROBOT) {
-        try {
-            const response = await axios.post(
-                QYWX_ROBOT,
-                {
-                    msgtype: "text",
-                    text: {
-                        content: msg,
-                        mentioned_list: ['@all']
-                    }
-                },
-                {
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
+    // if (QYWX_ROBOT) {
+    //     try {
+    //         const response = await axios.post(
+    //             QYWX_ROBOT,
+    //             {
+    //                 msgtype: "text",
+    //                 text: {
+    //                     content: msg,
+    //                     mentioned_list: ['@all']
+    //                 }
+    //             },
+    //             {
+    //                 headers: {
+    //                     'Content-Type': 'application/json'
+    //                 }
+    //             }
+    //         );
 
-            if (response.data.errcode === 0) {
-                console.log("推送成功");
-            } else {
-                console.log("推送失败: ", response.data);
-            }
-        } catch (error) {
-            console.error("请求失败: ", error.message);
+    //         if (response.data.errcode === 0) {
+    //             console.log("推送成功");
+    //         } else {
+    //             console.log("推送失败: ", response.data);
+    //         }
+    //     } catch (error) {
+    //         console.error("请求失败: ", error.message);
+    //     }
+    // }
+
+    // 使用pushplus推送
+    const title = "掘金签到"
+    const content = msg
+    await axios
+      .post('http://www.pushplus.plus/send', {
+        token: PUSHPLUS_TOKEN,
+        template: 'markdown',
+        title,
+        content,
+      })
+      .then(response => {
+        if (response?.data?.code !== SUCCESS_CODE) {
+          throw new Error(response?.data?.msg)
         }
-    }
+      })
+
     console.log("消息=====",msg);
 };
 
