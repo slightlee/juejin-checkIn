@@ -52,6 +52,7 @@ const pushMsg = async (msg) => {
             console.error("请求失败: ", error.message);
         }
     }
+    console.log("消息=====",msg);
 };
 
 const getRandomInt = (min, max) => {
@@ -154,50 +155,93 @@ const main = async () => {
                 throw new Error("二维码获取失败，重试次数过多");
             }
 
-            const loginButton = await page.$(".login-button");
-            await loginButton?.click();
-
-            // 等待二维码图片的容器出现
-            await page.waitForSelector(".qrcode-img", { timeout: 5000 }).catch(async () => {
-                console.log("二维码图片未找到，正在刷新页面...");
-                await page.reload({ waitUntil: "networkidle0" });
-                await login(retryCount + 1); // 递归调用login，增加重试次数
-            });
-
-            // 增加延迟，确保图片完全加载
-            await new Promise(resolve => setTimeout(resolve, 1000)); // 延迟1秒
-
-            const qrCodeImg = await page.$(".qrcode-img");
-            if (!qrCodeImg) {
-                throw new Error("未找到二维码图片");
-            }
-
-            // 确保二维码图片元素的尺寸已经大于零（即加载完成）
-            const boundingBox = await qrCodeImg.boundingBox();
-            if (!boundingBox || boundingBox.width === 0 || boundingBox.height === 0) {
-                console.log("二维码图片尚未加载完成，正在重试...");
-                await page.reload({ waitUntil: "networkidle0" });
-                await login(retryCount + 1); // 递归调用login，增加重试次数
-                return;
-            }
-
-            await qrCodeImg.screenshot({
-                path: QR_CODE_PATH,
-            });
-
-            console.log(`请扫描 ${QR_CODE_PATH} 中的二维码进行登录`);
-
-            const url = await decodeQR(QR_CODE_PATH);
-            console.log(generateQRtoTerminal(url));
-
-            page.on("framenavigated", async (frame) => {
-                if (frame === page.mainFrame()) {
-                    const cookies = await page.cookies();
-                    fs.writeFileSync(COOKIE_PATH, JSON.stringify(cookies, null, 2));
+            try {
+                const loginButton = await page.$(".login-button");
+                if (loginButton) {
+                    console.log("找到登录按钮，点击中...");
+                    await loginButton.click();
+                    console.log("已点击登录按钮");
+                } else {
+                    console.log("未找到登录按钮，可能是选择器变化或已登录");
                 }
-            });
 
-            await page.waitForNavigation({ waitUntil: "networkidle0" });
+                // 等待二维码图片的容器出现
+                console.log("等待二维码图片出现...");
+                await page.waitForSelector(".qrcode-img", { timeout: 15000 }).catch(async (err) => {
+                    console.log("等待二维码图片超时:", err.message);
+                    console.log("正在刷新页面并重试...");
+                    await page.reload({ waitUntil: "networkidle0" });
+                    await login(retryCount + 1);
+                    return;
+                });
+
+                // 增加延迟，确保图片完全加载
+                console.log("二维码元素已找到，等待2秒确保图片加载...");
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                // 再次检查二维码元素是否存在
+                const qrCodeImg = await page.$(".qrcode-img");
+                if (!qrCodeImg) {
+                    console.log("二维码元素加载后消失，重试...");
+                    await page.reload({ waitUntil: "networkidle0" });
+                    await login(retryCount + 1);
+                    return;
+                }
+
+                // 确保目录存在
+                if (!fs.existsSync(DIR_PATH)) {
+                    console.log(`创建目录: ${DIR_PATH}`);
+                    fs.mkdirSync(DIR_PATH, { recursive: true });
+                }
+
+                // 保存二维码图片
+                console.log("截取二维码图片...");
+                await qrCodeImg.screenshot({
+                    path: QR_CODE_PATH,
+                });
+                console.log(`二维码图片已保存到: ${QR_CODE_PATH}`);
+
+                // 验证图片是否成功保存
+                if (!fs.existsSync(QR_CODE_PATH)) {
+                    throw new Error("二维码图片保存失败");
+                }
+
+                console.log(`请扫描 ${QR_CODE_PATH} 中的二维码进行登录`);
+
+                // 尝试解码二维码
+                const url = await decodeQR(QR_CODE_PATH);
+                if (url) {
+                    console.log("二维码解析成功，URL:", url);
+                    const qrInTerminal = generateQRtoTerminal(url);
+                    console.log(qrInTerminal || "无法在终端显示二维码，请直接扫描图片文件");
+                } else {
+                    console.log("二维码解析失败或无内容，请直接打开图片文件扫描登录");
+                }
+
+                console.log("等待用户扫描二维码登录...");
+                page.on("framenavigated", async (frame) => {
+                    if (frame === page.mainFrame()) {
+                        console.log("检测到页面导航变化，可能已登录成功");
+                        const cookies = await page.cookies();
+                        fs.writeFileSync(COOKIE_PATH, JSON.stringify(cookies, null, 2));
+                        console.log("已保存登录Cookie");
+                    }
+                });
+
+                console.log("等待页面导航（登录完成）...");
+                await page.waitForNavigation({ waitUntil: "networkidle0", timeout: 120000 });
+                console.log("导航完成，登录成功");
+
+            } catch (error) {
+                console.error("登录过程中发生错误:", error.message);
+                if (retryCount < 3) {
+                    console.log(`重试登录 (${retryCount + 1}/3)...`);
+                    await page.reload({ waitUntil: "networkidle0" });
+                    await login(retryCount + 1);
+                } else {
+                    throw new Error(`登录失败: ${error.message}`);
+                }
+            }
         };
 
         if (!fs.existsSync(COOKIE_PATH)) {
